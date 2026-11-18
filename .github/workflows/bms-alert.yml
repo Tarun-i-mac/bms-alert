@@ -1,0 +1,57 @@
+name: bms-alert
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Override BMS URL (for testing)"
+        required: false
+      keyword:
+        description: "Override cinema-page keyword (for testing)"
+        required: false
+      movie_url:
+        description: "Override movie-page URL (for testing)"
+        required: false
+      movie_keyword:
+        description: "Override movie-page keyword, default rakki (for testing)"
+        required: false
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: bms-alert
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+      - run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+      - id: run
+        run: python monitor.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BMS_URL: ${{ inputs.url }}
+          KEYWORD: ${{ inputs.keyword }}
+          MOVIE_URL: ${{ inputs.movie_url }}
+          MOVIE_KEYWORD: ${{ inputs.movie_keyword }}
+      - name: Stop alerting after first hit
+        if: steps.run.outputs.found == 'true'
+        run: gh workflow disable bms-alert --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
